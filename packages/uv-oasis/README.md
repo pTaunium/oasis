@@ -1,6 +1,7 @@
 # uv-oasis 🏝️
 
-[![Build and Push Docker Image](https://github.com/ptaunium/uv-oasis/actions/workflows/build-and-push.yml/badge.svg)](https://github.com/ptaunium/uv-oasis/actions)
+[![Build uv-oasis](https://github.com/ptaunium/uv-oasis/actions/workflows/build-uv-oasis.yml/badge.svg)](https://github.com/ptaunium/uv-oasis/actions/workflows/build-uv-oasis.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 **Drop-in offline mirror for [uv](https://docs.astral.sh/uv/)**. Serve Python binaries seamlessly in air-gapped and restricted network environments.
 
@@ -205,21 +206,33 @@ Client (uv):
 
 ## Building from Source
 
-```bash
-# Install dependencies
-uv sync
+### Option 1: From workspace root (Recommended)
 
+```bash
 # Preview what will be downloaded
-uv run python build.py --dry-run
+uv run --package uv-oasis python packages/uv-oasis/build.py --dry-run
 
 # Build (download tarballs + generate JSON)
+uv run --package uv-oasis python packages/uv-oasis/build.py --output ./dist
+
+# Build Docker image (context MUST be workspace root for monorepo uv.lock bind mount)
+docker build -f packages/uv-oasis/docker/Dockerfile -t uv-oasis:latest .
+```
+
+### Option 2: From package directory (`packages/uv-oasis/`)
+
+```bash
+cd packages/uv-oasis
+
+# Preview or build
+uv run python build.py --dry-run
 uv run python build.py --output ./dist
 
 # Build using a specific config file or metadata URL (optional)
 # uv run python build.py --output ./dist --config custom.toml --metadata-url "https://raw.githubusercontent.com/astral-sh/uv/some-branch/crates/uv-python-managed/download-metadata.json"
 
-# Build Docker image
-docker build -f docker/Dockerfile -t uv-oasis:latest .
+# Build Docker image (context must still point to workspace root)
+docker build -f docker/Dockerfile -t uv-oasis:latest ../..
 ```
 
 ## API Endpoints
