@@ -1,0 +1,8 @@
+[upstream]
+nodejs_dist_url = "https://nodejs.org/dist"
+schedule_url = "https://raw.githubusercontent.com/nodejs/Release/main/schedule.json"
+platforms = ["linux-x64"]
+
+[tools]
+nvm_api_url = "https://api.github.com/repos/nvm-sh/nvm/releases/latest"
+fnm_api_url = "https://api.github.com/repos/Schniz/fnm/releases/latest"

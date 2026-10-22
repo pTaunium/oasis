@@ -1,0 +1,20 @@
+[project]
+name = "node-oasis"
+version = "0.1.0"
+description = "Drop-in offline Node.js distribution mirror for NVM and fnm. Serve Node.js binaries seamlessly in air-gapped networks."
+readme = "README.md"
+license = "MIT"
+authors = [
+  { name = "pTaunium", email = "pTaunium@gmail.com" }
+]
+requires-python = ">=3.14"
+dependencies = [
+  "httpx>=0.28,<1",
+  "tenacity~=9.1",
+]
+
+[tool.pytest]
+pythonpath = ['.']
+
+[tool.coverage.run]
+source = ["node_oasis", "build"]
