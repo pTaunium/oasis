@@ -28,6 +28,12 @@ class MetadataEntry(TypedDict, total=False):
 type MetadataIndex = dict[str, MetadataEntry]
 
 
+class ResolvedCatalog(TypedDict):
+    """Manifest returned by Release Catalog containing resolved python distributions."""
+
+    entries: MetadataIndex
+
+
 @dataclass(frozen=True)
 class PlatformSpec:
     """A target platform specification for filtering."""

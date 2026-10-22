@@ -14,7 +14,7 @@ class NodeRelease(TypedDict, total=False):
 
     version: str  # e.g. "v22.14.0"
     date: str  # e.g. "2024-10-29"
-    files: list[str]  # e.g. ["linux-x64", "headers", ...]
+    files: list[str] | None  # e.g. ["linux-x64", "headers", ...]
     npm: str
     v8: str
     uv: str
@@ -39,6 +39,14 @@ class ScheduleEntry(TypedDict, total=False):
 
 
 type ReleaseSchedule = dict[str, ScheduleEntry]
+
+
+class ResolvedCatalog(TypedDict):
+    """Manifest returned by Release Catalog containing resolved releases and index metadata."""
+
+    releases: list[NodeRelease]
+    index_tab_content: str
+    target_versions: list[str]
 
 
 class UpstreamConfig(TypedDict, total=False):

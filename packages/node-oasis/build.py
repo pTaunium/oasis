@@ -15,12 +15,12 @@ import logging
 import sys
 from pathlib import Path
 
+from node_oasis.catalog import resolve_catalog
 from node_oasis.config import load_config
 from node_oasis.downloader import download_node_releases
-from node_oasis.filter import filter_releases, get_active_lts_majors, normalize_platform
 from node_oasis.index_generator import write_index_json, write_index_tab
-from node_oasis.metadata import fetch_index_json, fetch_index_tab, fetch_schedule
 from node_oasis.tools import download_tools
+from node_oasis.utils import normalize_platform
 
 logging.basicConfig(
     level=logging.INFO,
@@ -124,18 +124,16 @@ def main(argv: list[str] | None = None) -> int:
     )
     platforms = [normalize_platform(p) for p in raw_platforms]
 
-    logger.info("Fetching metadata...")
-    index_json = fetch_index_json(url=f"{nodejs_dist_url}/index.json")
-    index_tab_raw = fetch_index_tab(url=f"{nodejs_dist_url}/index.tab")
-    schedule = fetch_schedule(url=schedule_url)
-
-    target_versions: list[str] = list(args.versions) if args.versions else []
-    if args.latest_lts:
-        target_versions.extend(str(m) for m in get_active_lts_majors(schedule))
-
-    filtered_releases = filter_releases(
-        index_json, versions=target_versions, platforms=platforms
+    catalog = resolve_catalog(
+        versions=args.versions,
+        platforms=platforms,
+        latest_lts=args.latest_lts,
+        nodejs_dist_url=nodejs_dist_url,
+        schedule_url=schedule_url,
     )
+    filtered_releases = catalog["releases"]
+    index_tab_content = catalog["index_tab_content"]
+    target_versions = catalog["target_versions"]
 
     if not filtered_releases:
         logger.error("No Node.js releases matched target versions: %s", target_versions)
@@ -168,8 +166,7 @@ def main(argv: list[str] | None = None) -> int:
 
     logger.info("Writing index files...")
     write_index_json(filtered_releases, dist_dir / "index.json")
-    filtered_versions = {r["version"] for r in filtered_releases}
-    write_index_tab(index_tab_raw, filtered_versions, dist_dir / "index.tab")
+    write_index_tab(index_tab_content, dist_dir / "index.tab")
 
     if tools_to_download:
         logger.info("Downloading tools...")

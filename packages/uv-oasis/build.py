@@ -16,11 +16,10 @@ import logging
 import sys
 from pathlib import Path
 
+from uv_oasis.catalog import resolve_catalog
 from uv_oasis.config import load_filter_config
 from uv_oasis.downloader import download_tarballs
-from uv_oasis.filter import filter_entries
 from uv_oasis.index_generator import write_json_index
-from uv_oasis.metadata import fetch_metadata
 
 logging.basicConfig(
     level=logging.INFO,
@@ -62,17 +61,10 @@ def main(argv: list[str] | None = None) -> int:
     assets_dir = output_dir / "assets"
     index_path = output_dir / "download-metadata.json.template"
 
-    # Step 1: Fetch metadata
-    logger.info("Fetching download-metadata.json...")
-    kwargs = {}
-    if args.metadata_url:
-        kwargs["url"] = args.metadata_url
-    metadata = fetch_metadata(**kwargs)
-    logger.info("Fetched %d total entries from metadata", len(metadata))
-
-    # Step 2: Filter
+    # Step 1 & 2: Resolve catalog
     filter_config = load_filter_config(args.config)
-    entries = filter_entries(metadata, filter_config)
+    catalog = resolve_catalog(filter_config, metadata_url=args.metadata_url)
+    entries = catalog["entries"]
     logger.info("Filtered to %d entries:", len(entries))
     for dist_id in entries:
         entry = entries[dist_id]

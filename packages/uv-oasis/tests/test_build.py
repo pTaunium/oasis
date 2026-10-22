@@ -8,36 +8,22 @@ from unittest.mock import patch
 
 import pytest
 from build import main
-from uv_oasis.models import MetadataEntry, MetadataIndex
+from uv_oasis.models import FilterConfig, MetadataEntry, MetadataIndex
 
 
 def test_main_dry_run(
     monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ):
-    mock_metadata: MetadataIndex = {
+    mock_filtered_entries: MetadataIndex = {
         "cpython-3.12.0-x86_64-unknown-linux-gnu-install_only": {
             "name": "cpython",
-            "arch": {"family": "x86_64", "variant": None},
-            "os": "linux",
-            "libc": "gnu",
-            "major": 3,
-            "minor": 12,
-            "patch": 0,
-            "prerelease": "",
-            "url": "https://example.com/py.tar.gz",
-            "sha256": "fakehash",
+            "variant": "freethreaded",
         }
     }
 
-    monkeypatch.setattr("build.fetch_metadata", lambda **kwargs: mock_metadata)
     monkeypatch.setattr(
-        "build.filter_entries",
-        lambda metadata, config: {
-            "cpython-3.12.0-x86_64-unknown-linux-gnu-install_only": {
-                "name": "cpython",
-                "variant": "default",
-            }
-        },
+        "build.resolve_catalog",
+        lambda config, **kwargs: {"entries": mock_filtered_entries},
     )
 
     caplog.set_level(logging.INFO)
@@ -51,16 +37,17 @@ def test_main_custom_metadata_url(
 ):
     received_kwargs: dict[str, object] = {}
 
-    def mock_fetch(**kwargs: object) -> MetadataIndex:
+    def mock_resolve(
+        config: FilterConfig, **kwargs: object
+    ) -> dict[str, MetadataIndex]:
         received_kwargs.update(kwargs)
-        return {}
+        return {"entries": {}}
 
-    monkeypatch.setattr("build.fetch_metadata", mock_fetch)
-    monkeypatch.setattr("build.filter_entries", lambda metadata, config: {})
+    monkeypatch.setattr("build.resolve_catalog", mock_resolve)
 
     exit_code = main(["--metadata-url", "https://custom.test/meta.json", "--dry-run"])
     assert exit_code == 0
-    assert received_kwargs["url"] == "https://custom.test/meta.json"
+    assert received_kwargs["metadata_url"] == "https://custom.test/meta.json"
 
 
 def test_main_full_run(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
@@ -76,24 +63,22 @@ def test_main_full_run(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
         "url": "https://example.com/py.tar.gz",
         "sha256": "fakehash",
     }
-    mock_metadata: MetadataIndex = {
-        "cpython-3.12.0-x86_64-unknown-linux-gnu-install_only": mock_entry
-    }
 
-    monkeypatch.setattr("build.fetch_metadata", lambda **kwargs: mock_metadata)
     monkeypatch.setattr(
-        "build.filter_entries",
-        lambda metadata, config: {
-            "cpython-3.12.0-x86_64-unknown-linux-gnu-install_only": mock_entry
+        "build.resolve_catalog",
+        lambda config, **kwargs: {
+            "entries": {
+                "cpython-3.12.0-x86_64-unknown-linux-gnu-install_only": mock_entry
+            }
         },
     )
 
     downloaded_tarballs: list[object] = []
     index_written: list[Path] = []
 
-    def mock_download(entries: MetadataIndex, dest: Path) -> list[Path]:
+    def mock_download(entries: MetadataIndex, dest: Path) -> dict[str, Path]:
         downloaded_tarballs.append(entries)
-        return []
+        return {}
 
     def mock_write_index(entries: MetadataIndex, dest: Path) -> Path:
         index_written.append(dest)
@@ -116,8 +101,7 @@ def test_main_entrypoint():
 
     with (
         patch.object(sys, "argv", ["build.py", "--dry-run"]),
-        patch("build.fetch_metadata", return_value={}),
-        patch("build.filter_entries", return_value={}),
+        patch("build.resolve_catalog", return_value={"entries": {}}),
         pytest.raises(SystemExit) as exc_info,
     ):
         runpy.run_path(str(Path(build.__file__)), run_name="__main__")

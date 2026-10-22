@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 from build import main
-from node_oasis.models import NodeIndex, ReleaseSchedule
+from node_oasis.models import NodeIndex
 
 
 def test_main_validation_no_versions(capsys: pytest.CaptureFixture[str]):
@@ -43,21 +43,16 @@ def test_main_validation_invalid_tool(capsys: pytest.CaptureFixture[str]):
 def test_main_dry_run(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ):
-    mock_index: NodeIndex = [
-        {"version": "v22.14.0", "lts": "Jod", "files": ["linux-x64"]},
-        {"version": "v20.18.1", "lts": "Iron", "files": ["linux-x64"]},
-    ]
-    mock_schedule: ReleaseSchedule = {
-        "v22": {
-            "start": "2024-04-24",
-            "lts": "2024-10-29",
-            "end": "2027-04-30",
-        }
+    mock_catalog = {
+        "releases": [
+            {"version": "v22.14.0", "lts": "Jod", "files": ["linux-x64"]},
+            {"version": "v20.18.1", "lts": "Iron", "files": ["linux-x64"]},
+        ],
+        "index_tab_content": "version\tdate\n",
+        "target_versions": ["22"],
     }
 
-    monkeypatch.setattr("build.fetch_index_json", lambda **kwargs: mock_index)
-    monkeypatch.setattr("build.fetch_index_tab", lambda **kwargs: "version\tdate\n")
-    monkeypatch.setattr("build.fetch_schedule", lambda **kwargs: mock_schedule)
+    monkeypatch.setattr("build.resolve_catalog", lambda **kwargs: mock_catalog)
 
     exit_code = main(["--latest-lts", "--dry-run"])
     assert exit_code == 0
@@ -69,23 +64,13 @@ def test_main_dry_run(
 
 
 def test_main_full_run(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
-    mock_index: NodeIndex = [
-        {"version": "v22.14.0", "lts": "Jod", "files": ["linux-x64"]}
-    ]
-    mock_schedule: ReleaseSchedule = {
-        "v22": {
-            "start": "2024-04-24",
-            "lts": "2024-10-29",
-            "end": "2027-04-30",
-        }
+    mock_catalog = {
+        "releases": [{"version": "v22.14.0", "lts": "Jod", "files": ["linux-x64"]}],
+        "index_tab_content": "version\tdate\nv22.14.0\t2025-02-18\n",
+        "target_versions": ["22"],
     }
 
-    monkeypatch.setattr("build.fetch_index_json", lambda **kwargs: mock_index)
-    monkeypatch.setattr(
-        "build.fetch_index_tab",
-        lambda **kwargs: "version\tdate\nv22.14.0\t2025-02-18\n",
-    )
-    monkeypatch.setattr("build.fetch_schedule", lambda **kwargs: mock_schedule)
+    monkeypatch.setattr("build.resolve_catalog", lambda **kwargs: mock_catalog)
 
     downloaded_releases: list[object] = []
     downloaded_tools: list[str] = []
@@ -150,15 +135,12 @@ fnm_api_url = "https://custom.internal/fnm"
 
 
 def test_main_full_run_no_tools(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
-    mock_index: NodeIndex = [
-        {"version": "v22.14.0", "lts": "Jod", "files": ["linux-x64"]}
-    ]
-    monkeypatch.setattr("build.fetch_index_json", lambda **kwargs: mock_index)
-    monkeypatch.setattr(
-        "build.fetch_index_tab",
-        lambda **kwargs: "version\tdate\nv22.14.0\t2025-02-18\n",
-    )
-    monkeypatch.setattr("build.fetch_schedule", lambda **kwargs: {})
+    mock_catalog = {
+        "releases": [{"version": "v22.14.0", "lts": "Jod", "files": ["linux-x64"]}],
+        "index_tab_content": "version\tdate\nv22.14.0\t2025-02-18\n",
+        "target_versions": ["22"],
+    }
+    monkeypatch.setattr("build.resolve_catalog", lambda **kwargs: mock_catalog)
     monkeypatch.setattr("build.download_node_releases", lambda *args, **kwargs: [])
 
     out_dir = tmp_path / "output_no_tools"
@@ -172,12 +154,14 @@ def test_main_full_run_no_tools(tmp_path: Path, monkeypatch: pytest.MonkeyPatch)
 def test_main_no_matching_releases(
     monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ):
-    mock_index: NodeIndex = [
-        {"version": "v22.14.0", "lts": "Jod", "files": ["linux-x64"]}
-    ]
-    monkeypatch.setattr("build.fetch_index_json", lambda **kwargs: mock_index)
-    monkeypatch.setattr("build.fetch_index_tab", lambda **kwargs: "version\tdate\n")
-    monkeypatch.setattr("build.fetch_schedule", lambda **kwargs: {})
+    monkeypatch.setattr(
+        "build.resolve_catalog",
+        lambda **kwargs: {
+            "releases": [],
+            "index_tab_content": "",
+            "target_versions": ["99"],
+        },
+    )
 
     caplog.set_level(logging.ERROR)
     exit_code = main(["--versions", "99", "--dry-run"])
@@ -192,20 +176,15 @@ def test_main_entrypoint():
 
     import build
 
-    mock_index = [{"version": "v22.14.0", "lts": "Jod", "files": ["linux-x64"]}]
-    mock_schedule = {
-        "v22": {
-            "start": "2024-04-24",
-            "lts": "2024-10-29",
-            "end": "2027-04-30",
-        }
+    mock_catalog = {
+        "releases": [{"version": "v22.14.0", "lts": "Jod", "files": ["linux-x64"]}],
+        "index_tab_content": "",
+        "target_versions": ["22"],
     }
 
     with (
         patch.object(sys, "argv", ["build.py", "--latest-lts", "--dry-run"]),
-        patch("build.fetch_index_json", return_value=mock_index),
-        patch("build.fetch_index_tab", return_value=""),
-        patch("build.fetch_schedule", return_value=mock_schedule),
+        patch("build.resolve_catalog", return_value=mock_catalog),
         pytest.raises(SystemExit) as exc_info,
     ):
         runpy.run_path(str(Path(build.__file__)), run_name="__main__")

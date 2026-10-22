@@ -9,9 +9,8 @@ from pathlib import Path
 import httpx
 from tenacity import retry, retry_if_exception, stop_after_attempt, wait_exponential
 
-from .filter import normalize_platform
 from .models import ChecksumMismatchError, NodeIndex
-from .utils import calculate_sha256
+from .utils import calculate_sha256, normalize_platform
 
 logger = logging.getLogger(__name__)
 
