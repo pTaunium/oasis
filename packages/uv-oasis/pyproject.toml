@@ -17,4 +17,4 @@ dependencies = [
 pythonpath = ['.']
 
 [tool.coverage.run]
-source = ["uv_oasis"]
+source = ["uv_oasis", "build"]

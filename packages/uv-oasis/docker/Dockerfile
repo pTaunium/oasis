@@ -22,6 +22,7 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 
 # Copy only the necessary python source code
 COPY packages/uv-oasis/build.py /app/
+COPY packages/uv-oasis/config.toml /app/
 COPY packages/uv-oasis/uv_oasis /app/uv_oasis
 
 # Run build script: download tarballs + generate JSON
@@ -40,7 +41,7 @@ RUN apk upgrade --no-cache
 LABEL org.opencontainers.image.title="uv-oasis"
 LABEL org.opencontainers.image.description="Offline Python mirror for uv in air-gapped environments"
 LABEL org.opencontainers.image.licenses="MIT"
-LABEL org.opencontainers.image.source="https://github.com/pTaunium/uv-oasis"
+LABEL org.opencontainers.image.source="https://github.com/pTaunium/oasis"
 
 # nginx-unprivileged expects templates in /etc/nginx/templates
 COPY --chown=nginx:nginx packages/uv-oasis/docker/nginx.conf /etc/nginx/templates/default.conf.template
