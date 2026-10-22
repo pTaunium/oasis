@@ -1,0 +1,119 @@
+name: "Build and Push: node-oasis"
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "packages/node-oasis/**"
+      - "pyproject.toml"
+      - "uv.lock"
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "Override release tag (leave empty to auto-detect latest LTS)"
+        required: false
+        type: string
+  schedule:
+    - cron: "0 6 * * *"
+
+env:
+  REGISTRY: ghcr.io
+
+jobs:
+  check-update:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
+    outputs:
+      should_build: ${{ steps.check.outputs.should_build }}
+      release_tag: ${{ steps.check.outputs.release_tag }}
+    steps:
+      - name: Log in to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Determine release tag
+        id: check
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          INPUT_TAG: ${{ inputs.release_tag }}
+          IMAGE_OWNER: ${{ github.repository_owner }}
+        run: |
+          # Convert image name to lowercase for Docker
+          IMAGE_LC=$(echo "${IMAGE_OWNER}/node-oasis" | tr '[:upper:]' '[:lower:]')
+
+          # Use manual input tag if provided, otherwise fetch latest LTS
+          if [ -n "${INPUT_TAG}" ]; then
+            RELEASE_TAG="${INPUT_TAG}"
+          else
+            RELEASE_TAG=$(curl -fsSL https://nodejs.org/dist/index.json \
+              | jq -r '[.[] | select(.lts != false)][0].version')
+          fi
+
+          if [ -z "${RELEASE_TAG}" ] || [ "${RELEASE_TAG}" = "null" ]; then
+            echo "::error::Failed to determine a valid release tag"
+            exit 1
+          fi
+
+          echo "release_tag=${RELEASE_TAG}" >> "$GITHUB_OUTPUT"
+          echo "Latest release tag: ${RELEASE_TAG}"
+
+          # Check if this tag already exists in GHCR
+          if docker manifest inspect "ghcr.io/${IMAGE_LC}:${RELEASE_TAG}" > /dev/null 2>&1; then
+            echo "Image ghcr.io/${IMAGE_LC}:${RELEASE_TAG} already exists."
+            if [ "${{ github.event_name }}" = "workflow_dispatch" ] || [ "${{ github.event_name }}" = "push" ]; then
+              echo "Event ${{ github.event_name }} — forcing rebuild."
+              echo "should_build=true" >> "$GITHUB_OUTPUT"
+            else
+              echo "should_build=false" >> "$GITHUB_OUTPUT"
+            fi
+          else
+            echo "Image not found — build required."
+            echo "should_build=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  build-and-push:
+    needs: check-update
+    if: needs.check-update.outputs.should_build == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Set image name in lowercase
+        run: echo "IMAGE_NAME=$(echo ${{ github.repository_owner }}/node-oasis | tr '[:upper:]' '[:lower:]')" >> $GITHUB_ENV
+
+      - name: Build and push image
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: packages/node-oasis/docker/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          build-args: |
+            GITHUB_TOKEN=${{ secrets.GITHUB_TOKEN }}
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.check-update.outputs.release_tag }}
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
