@@ -13,11 +13,12 @@ ENV UV_NO_DEV=1
 WORKDIR /app
 
 # Intermediate layer: install dependencies first (Docker cache friendly)
-# Workspace root pyproject.toml + uv.lock + package pyproject.toml needed for uv sync
+# Workspace root pyproject.toml + uv.lock + all member pyproject.toml needed for uv sync
 RUN --mount=type=cache,target=/root/.cache/uv \
     --mount=type=bind,source=uv.lock,target=uv.lock \
     --mount=type=bind,source=pyproject.toml,target=pyproject.toml \
     --mount=type=bind,source=packages/node-oasis/pyproject.toml,target=packages/node-oasis/pyproject.toml \
+    --mount=type=bind,source=packages/uv-oasis/pyproject.toml,target=packages/uv-oasis/pyproject.toml \
     uv sync --locked --no-install-project --package node-oasis
 
 # Copy only the necessary python source code
