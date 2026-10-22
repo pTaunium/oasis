@@ -26,8 +26,12 @@ COPY packages/node-oasis/config.toml /app/
 COPY packages/node-oasis/node_oasis /app/node_oasis
 
 # Run build script: download Node.js distributions + generate indexes
-ARG GITHUB_TOKEN
-RUN GITHUB_TOKEN=$GITHUB_TOKEN uv run python build.py --latest-lts --output /app/dist
+# UPSTREAM_FINGERPRINT invalidates this layer's cache whenever upstream versions change
+ARG UPSTREAM_FINGERPRINT=""
+RUN --mount=type=secret,id=GITHUB_TOKEN,required=false \
+    GITHUB_TOKEN=$(cat /run/secrets/GITHUB_TOKEN 2>/dev/null || echo "") \
+    UPSTREAM_FINGERPRINT="${UPSTREAM_FINGERPRINT}" \
+    uv run python build.py --latest-lts --output /app/dist
 
 # ============================================================
 # Stage 2: Runtime
@@ -65,5 +69,10 @@ COPY --chown=nginx:nginx --from=builder /app/dist/tools/ /usr/share/nginx/html/t
 USER nginx
 
 EXPOSE 8080
+
+# Upstream versions snapshot (Node.js LTS + nvm + fnm), read by CI to skip unchanged builds.
+# Kept last so a changed value does not invalidate earlier layers.
+ARG UPSTREAM_FINGERPRINT=""
+LABEL io.github.ptaunium.node-oasis.upstream-fingerprint="${UPSTREAM_FINGERPRINT}"
 
 ENTRYPOINT ["/entrypoint.sh"]

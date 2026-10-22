@@ -10,14 +10,20 @@ on:
   workflow_dispatch:
     inputs:
       release_tag:
-        description: "Override release tag (leave empty to auto-detect latest LTS)"
+        description: "Release tag (e.g., 20260301). Leave empty to use current UTC date."
         required: false
         type: string
+      force_rebuild:
+        description: "Force rebuild even if upstream fingerprint has not changed"
+        required: false
+        type: boolean
+        default: true
   schedule:
-    - cron: "0 6 * * *"
+    - cron: "0 0 1,15 * *"
 
 env:
   REGISTRY: ghcr.io
+  FINGERPRINT_LABEL: io.github.ptaunium.node-oasis.upstream-fingerprint
 
 jobs:
   check-update:
@@ -28,6 +34,7 @@ jobs:
     outputs:
       should_build: ${{ steps.check.outputs.should_build }}
       release_tag: ${{ steps.check.outputs.release_tag }}
+      fingerprint: ${{ steps.check.outputs.fingerprint }}
     steps:
       - name: Log in to GHCR
         uses: docker/login-action@v4
@@ -36,43 +43,72 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Determine release tag
+      - name: Compute upstream fingerprint and release tag
         id: check
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           INPUT_TAG: ${{ inputs.release_tag }}
+          FORCE_REBUILD: ${{ inputs.force_rebuild }}
+          EVENT_NAME: ${{ github.event_name }}
           IMAGE_OWNER: ${{ github.repository_owner }}
         run: |
-          # Convert image name to lowercase for Docker
-          IMAGE_LC=$(echo "${IMAGE_OWNER}/node-oasis" | tr '[:upper:]' '[:lower:]')
+          set -euo pipefail
+          IMAGE_NAME=$(echo "${IMAGE_OWNER}/node-oasis" | tr '[:upper:]' '[:lower:]')
 
-          # Use manual input tag if provided, otherwise fetch latest LTS
-          if [ -n "${INPUT_TAG}" ]; then
-            RELEASE_TAG="${INPUT_TAG}"
-          else
-            RELEASE_TAG=$(curl -fsSL https://nodejs.org/dist/index.json \
-              | jq -r '[.[] | select(.lts != false)][0].version')
-          fi
+          # CalVer snapshot tag; same-day rebuilds overwrite the tag
+          RELEASE_TAG="${INPUT_TAG:-$(date -u +%Y%m%d)}"
 
-          if [ -z "${RELEASE_TAG}" ] || [ "${RELEASE_TAG}" = "null" ]; then
-            echo "::error::Failed to determine a valid release tag"
+          # Mirror build.py --latest-lts: Active/Maintenance LTS majors from schedule.json,
+          # then the newest release per major from index.json
+          TODAY=$(date -u +%F)
+          MAJORS=$(curl -fsSL --retry 3 --retry-delay 2 --retry-connrefused https://raw.githubusercontent.com/nodejs/Release/main/schedule.json \
+            | jq -c --arg today "${TODAY}" \
+              '[to_entries[] | select(.key | test("^v[0-9]+$"))
+                | select((.value.lts | type) == "string" and .value.lts <= $today
+                         and .value.end != null and .value.end >= $today) | .key]')
+          NODE_VERSIONS=$(curl -fsSL --retry 3 --retry-delay 2 --retry-connrefused https://nodejs.org/dist/index.json \
+            | jq -r --argjson majors "${MAJORS}" \
+              '[$majors[] as $m | ([.[] | select((.version // "") | startswith($m + ".")) | .version] | sort_by(ltrimstr("v") | split(".") | map(tonumber)) | last // empty)]
+               | sort_by(ltrimstr("v") | split(".") | map(tonumber)) | reverse | join(",")')
+          NVM_TAG=$(curl -fsSL --retry 3 --retry-delay 2 --retry-connrefused \
+            ${GH_TOKEN:+-H "Authorization: Bearer ${GH_TOKEN}"} \
+            https://api.github.com/repos/nvm-sh/nvm/releases/latest | jq -r .tag_name)
+          FNM_TAG=$(curl -fsSL --retry 3 --retry-delay 2 --retry-connrefused \
+            ${GH_TOKEN:+-H "Authorization: Bearer ${GH_TOKEN}"} \
+            https://api.github.com/repos/Schniz/fnm/releases/latest | jq -r .tag_name)
+
+          if [ -z "${NODE_VERSIONS}" ] || [ "${NODE_VERSIONS}" = "null" ] || \
+             [ -z "${NVM_TAG}" ] || [ "${NVM_TAG}" = "null" ] || \
+             [ -z "${FNM_TAG}" ] || [ "${FNM_TAG}" = "null" ]; then
+            echo "::error::Failed to resolve upstream versions (node='${NODE_VERSIONS}' nvm='${NVM_TAG}' fnm='${FNM_TAG}')"
             exit 1
           fi
 
+          FINGERPRINT="node:${NODE_VERSIONS}|nvm:${NVM_TAG}|fnm:${FNM_TAG}"
           echo "release_tag=${RELEASE_TAG}" >> "$GITHUB_OUTPUT"
-          echo "Latest release tag: ${RELEASE_TAG}"
+          echo "fingerprint=${FINGERPRINT}" >> "$GITHUB_OUTPUT"
+          echo "Release tag: ${RELEASE_TAG}"
+          echo "Upstream fingerprint: ${FINGERPRINT}"
 
-          # Check if this tag already exists in GHCR
-          if docker manifest inspect "ghcr.io/${IMAGE_LC}:${RELEASE_TAG}" > /dev/null 2>&1; then
-            echo "Image ghcr.io/${IMAGE_LC}:${RELEASE_TAG} already exists."
-            if [ "${{ github.event_name }}" = "workflow_dispatch" ] || [ "${{ github.event_name }}" = "push" ]; then
-              echo "Event ${{ github.event_name }} — forcing rebuild."
-              echo "should_build=true" >> "$GITHUB_OUTPUT"
-            else
-              echo "should_build=false" >> "$GITHUB_OUTPUT"
-            fi
+          # Code pushes and forced manual runs always build
+          if [ "${EVENT_NAME}" = "push" ] || { [ "${EVENT_NAME}" = "workflow_dispatch" ] && [ "${FORCE_REBUILD}" = "true" ]; }; then
+            echo "Event ${EVENT_NAME} — forcing rebuild."
+            echo "should_build=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # Otherwise build only when the fingerprint differs from the published :latest
+          PUBLISHED_FINGERPRINT=$(docker buildx imagetools inspect "${REGISTRY}/${IMAGE_NAME}:latest" --format '{{ json .Image }}' 2>/dev/null \
+            | jq -r --arg key "${FINGERPRINT_LABEL}" \
+              '(if has("linux/amd64") then .["linux/amd64"] else . end) | .config.Labels[$key] // empty' \
+            || true)
+          echo "Published fingerprint: ${PUBLISHED_FINGERPRINT:-<none>}"
+
+          if [ "${PUBLISHED_FINGERPRINT}" = "${FINGERPRINT}" ]; then
+            echo "Upstream unchanged — skipping build."
+            echo "should_build=false" >> "$GITHUB_OUTPUT"
           else
-            echo "Image not found — build required."
+            echo "Upstream changed — build required."
             echo "should_build=true" >> "$GITHUB_OUTPUT"
           fi
 
@@ -110,8 +146,10 @@ jobs:
           file: packages/node-oasis/docker/Dockerfile
           platforms: linux/amd64,linux/arm64
           push: true
-          build-args: |
+          secrets: |
             GITHUB_TOKEN=${{ secrets.GITHUB_TOKEN }}
+          build-args: |
+            UPSTREAM_FINGERPRINT=${{ needs.check-update.outputs.fingerprint }}
           tags: |
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.check-update.outputs.release_tag }}
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
