@@ -341,4 +341,4 @@ This project downloads and redistributes binaries and software from:
 - **[nvm-sh/nvm](https://github.com/nvm-sh/nvm)** — Licensed under the [MIT License](https://github.com/nvm-sh/nvm/blob/master/LICENSE.markdown).
 - **[Schniz/fnm](https://github.com/Schniz/fnm)** — Licensed under the [GPL-3.0 License](https://github.com/Schniz/fnm/blob/master/LICENSE).
 
-This project itself is licensed under the MIT License. See [LICENSE](LICENSE) for details.
+This project itself is licensed under the MIT License. See [LICENSE](../../LICENSE) for details.

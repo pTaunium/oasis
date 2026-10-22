@@ -54,7 +54,7 @@ RUN chmod +x /entrypoint.sh
 RUN chown -R nginx:nginx /usr/share/nginx/html
 
 # Copy documentation and licenses
-COPY --chown=nginx:nginx packages/node-oasis/LICENSE /usr/share/nginx/html/LICENSE
+COPY --chown=nginx:nginx LICENSE /usr/share/nginx/html/LICENSE
 COPY --chown=nginx:nginx packages/node-oasis/README.md /usr/share/nginx/html/README.md
 
 # Copy build artifacts from builder

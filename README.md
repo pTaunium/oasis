@@ -45,3 +45,9 @@ For package-specific configuration (`config.toml`), build flags, client configur
 - Python mirror: [packages/uv-oasis/README.md](packages/uv-oasis/README.md)
 - Node.js mirror: [packages/node-oasis/README.md](packages/node-oasis/README.md)
 - Agent guides: [AGENTS.md](AGENTS.md), [packages/uv-oasis/AGENTS.md](packages/uv-oasis/AGENTS.md), [packages/node-oasis/AGENTS.md](packages/node-oasis/AGENTS.md)
+
+---
+
+## License
+
+This project is licensed under the MIT License. See [LICENSE](LICENSE) for details.

@@ -250,4 +250,4 @@ This project downloads and redistributes binaries from:
 - **[python-build-standalone](https://github.com/astral-sh/python-build-standalone)** by [Astral](https://astral.sh/) — Licensed under the [Python Software Foundation License](https://docs.python.org/3/license.html).
 - **[uv](https://github.com/astral-sh/uv)** by [Astral](https://astral.sh/) — The JSON metadata format is derived from uv's `download-metadata.json`.
 
-This project itself is licensed under the MIT License. See [LICENSE](LICENSE) for details.
+This project itself is licensed under the MIT License. See [LICENSE](../../LICENSE) for details.
